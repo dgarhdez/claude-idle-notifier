@@ -1,5 +1,5 @@
 # Telegram Bot credentials
-# 1. Create a bot via @BotFather on Telegram -> get the token
+# 1. Create a bot via @BotFather (https://t.me/botfather) on Telegram -> get the token
 # 2. Send any message to your bot, then fetch your chat ID:
 #    curl https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
 # 3. Copy this file to telegram.conf and fill in the values
