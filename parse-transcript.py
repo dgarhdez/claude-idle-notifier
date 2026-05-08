@@ -28,8 +28,8 @@ def tail_lines(filepath, n=50):
 def extract_context(transcript_path):
     lines = tail_lines(transcript_path, 50)
 
-    # Parse JSONL lines, collect assistant messages
-    assistant_messages = []
+    # Parse all JSONL lines, collecting messages and tool_result IDs
+    parsed = []
     for line in lines:
         line = line.strip()
         if not line:
@@ -38,39 +38,54 @@ def extract_context(transcript_path):
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
+        parsed.append(obj)
 
+    assistant_messages = []
+    # Collect tool_use_ids that have a tool_result (i.e., already answered)
+    answered_tool_ids = set()
+    for obj in parsed:
         msg = obj.get("message", {})
-        if msg.get("role") == "assistant":
+        role = msg.get("role", "")
+        if role == "assistant":
             assistant_messages.append(msg)
+        elif role == "user":
+            for block in msg.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tid = block.get("tool_use_id", "")
+                    if tid:
+                        answered_tool_ids.add(tid)
 
     if not assistant_messages:
         return {"context": "Claude Code is waiting for your input.", "options": []}
 
+    # Scan backward for a PENDING AskUserQuestion (no tool_result yet).
+    for msg in reversed(assistant_messages):
+        content_blocks = msg.get("content", [])
+        for block in content_blocks:
+            if block.get("type") == "tool_use" and block.get("name") == "AskUserQuestion":
+                if block.get("id", "") in answered_tool_ids:
+                    break  # already answered, stop scanning
+                inp = block.get("input", {})
+                questions = inp.get("questions", [])
+                if not questions:
+                    continue
+
+                q = questions[0]
+                question_text = q.get("question", "Claude is asking a question")
+                options_raw = q.get("options", [])
+
+                context = f"Claude is asking:\n\n{question_text}"
+                options = []
+                for i, opt in enumerate(options_raw):
+                    label = opt.get("label", f"Option {i+1}")
+                    # Telegram callback_data max 64 bytes; use index
+                    options.append({"label": label, "callback_data": str(i)})
+
+                return {"context": context, "options": options}
+
+    # No pending AskUserQuestion — extract last text block
     last_msg = assistant_messages[-1]
     content_blocks = last_msg.get("content", [])
-
-    # Look for AskUserQuestion tool_use
-    for block in content_blocks:
-        if block.get("type") == "tool_use" and block.get("name") == "AskUserQuestion":
-            inp = block.get("input", {})
-            questions = inp.get("questions", [])
-            if not questions:
-                continue
-
-            q = questions[0]
-            question_text = q.get("question", "Claude is asking a question")
-            options_raw = q.get("options", [])
-
-            context = f"Claude is asking:\n\n{question_text}"
-            options = []
-            for i, opt in enumerate(options_raw):
-                label = opt.get("label", f"Option {i+1}")
-                # Telegram callback_data max 64 bytes; use index
-                options.append({"label": label, "callback_data": str(i)})
-
-            return {"context": context, "options": options}
-
-    # No AskUserQuestion — extract last text block
     for block in reversed(content_blocks):
         if block.get("type") == "text":
             text = block.get("text", "").strip()

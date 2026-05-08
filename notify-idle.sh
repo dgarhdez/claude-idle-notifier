@@ -4,13 +4,16 @@
 # and sends a rich Telegram notification with inline keyboard buttons.
 # Spawns a reply poller that injects Telegram replies back into kitty.
 
+# Debug: log that hook fired
+echo "$(date '+%H:%M:%S') hook fired" >> /tmp/claude-idle-notify.log
+
 # Read hook payload from stdin
 INPUT=$(cat)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF="$SCRIPT_DIR/telegram.conf"
 PID_FILE="/tmp/claude-idle-notify.pid"
-DELAY=5
+DELAY=0
 
 # Load Telegram credentials
 if [[ ! -f "$CONF" ]]; then
@@ -50,5 +53,6 @@ export SCRIPT_DIR TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID TRANSCRIPT_PATH PID_FILE D
 # (On macOS, setsid is not available; use direct background instead.
 #  cancel-notify.sh kills both the main PID and the poller PID separately.)
 bash "$SCRIPT_DIR/send-and-poll.sh" &
+disown
 
 echo $! > "$PID_FILE"
